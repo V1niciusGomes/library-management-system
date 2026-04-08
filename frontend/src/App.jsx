@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from './api';
 
 const initialLivro = {
@@ -23,37 +23,143 @@ const initialEmprestimo = {
   diasEmprestimo: 7,
 };
 
+const sections = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'livros', label: 'Livros' },
+  { id: 'usuarios', label: 'Usuarios' },
+  { id: 'emprestimos', label: 'Emprestimos' },
+  { id: 'configuracoes', label: 'Configuracoes' },
+];
+
 export default function App() {
+  const [activeSection, setActiveSection] = useState(localStorage.getItem('defaultSection') || 'dashboard');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [compactMode, setCompactMode] = useState(localStorage.getItem('compactMode') === 'true');
+  const [confirmActions, setConfirmActions] = useState(localStorage.getItem('confirmActions') !== 'false');
+  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(Number(localStorage.getItem('autoRefreshSeconds') || '0'));
+  const [authToken, setAuthToken] = useState(localStorage.getItem('authToken') || '');
+  const [adminUser, setAdminUser] = useState(localStorage.getItem('adminUser') || '');
+  const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'admin123' });
+  const [loginLoading, setLoginLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [livros, setLivros] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
-  const [emprestimos, setEmprestimos] = useState([]);
+  const [emprestimosAtivos, setEmprestimosAtivos] = useState([]);
+  const [historicoEmprestimos, setHistoricoEmprestimos] = useState([]);
   const [livroForm, setLivroForm] = useState(initialLivro);
   const [usuarioForm, setUsuarioForm] = useState(initialUsuario);
   const [emprestimoForm, setEmprestimoForm] = useState(initialEmprestimo);
-  const [mensagem, setMensagem] = useState('');
+  const [mensagem, setMensagem] = useState({ text: '', type: 'ok' });
+  const [loading, setLoading] = useState(false);
+  const [livroSearch, setLivroSearch] = useState('');
+  const [usuarioSearch, setUsuarioSearch] = useState('');
+  const [emprestimoSearch, setEmprestimoSearch] = useState('');
+  const [lastSync, setLastSync] = useState(null);
 
   async function carregarTudo() {
+    if (!authToken) {
+      return;
+    }
+
+    setLoading(true);
     try {
-      const [statsRes, livrosRes, usuariosRes, emprestimosRes] = await Promise.all([
+      const [statsRes, livrosRes, usuariosRes, emprestimosAtivosRes, emprestimosRes] = await Promise.all([
         api.get('/dashboard/estatisticas'),
         api.get('/livros'),
         api.get('/usuarios'),
         api.get('/emprestimos/ativos'),
+        api.get('/emprestimos'),
       ]);
 
       setStats(statsRes.data);
       setLivros(livrosRes.data);
       setUsuarios(usuariosRes.data);
-      setEmprestimos(emprestimosRes.data);
-    } catch {
-      setMensagem('Nao foi possivel carregar os dados. Verifique se a API esta ativa.');
+      setEmprestimosAtivos(emprestimosAtivosRes.data);
+      setHistoricoEmprestimos(emprestimosRes.data);
+      setLastSync(new Date());
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        logout('Sessao expirada. Faca login novamente.');
+        return;
+      }
+      setMensagem({
+        text: 'Nao foi possivel carregar os dados. Verifique se a API esta ativa.',
+        type: 'error',
+      });
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    carregarTudo();
-  }, []);
+    if (authToken) {
+      carregarTudo();
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-compact', compactMode ? 'true' : 'false');
+    localStorage.setItem('compactMode', String(compactMode));
+  }, [compactMode]);
+
+  useEffect(() => {
+    localStorage.setItem('confirmActions', String(confirmActions));
+  }, [confirmActions]);
+
+  useEffect(() => {
+    localStorage.setItem('autoRefreshSeconds', String(autoRefreshSeconds));
+  }, [autoRefreshSeconds]);
+
+  useEffect(() => {
+    localStorage.setItem('defaultSection', activeSection);
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (!authToken || autoRefreshSeconds <= 0) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      carregarTudo();
+    }, autoRefreshSeconds * 1000);
+
+    return () => clearInterval(interval);
+  }, [authToken, autoRefreshSeconds]);
+
+  const livrosFiltrados = useMemo(() => {
+    const query = livroSearch.trim().toLowerCase();
+    if (!query) {
+      return livros;
+    }
+    return livros.filter((livro) => (
+      `${livro.titulo} ${livro.autor} ${livro.isbn}`.toLowerCase().includes(query)
+    ));
+  }, [livros, livroSearch]);
+
+  const usuariosFiltrados = useMemo(() => {
+    const query = usuarioSearch.trim().toLowerCase();
+    if (!query) {
+      return usuarios;
+    }
+    return usuarios.filter((usuario) => (
+      `${usuario.nome} ${usuario.email} ${usuario.documento}`.toLowerCase().includes(query)
+    ));
+  }, [usuarios, usuarioSearch]);
+
+  const emprestimosFiltrados = useMemo(() => {
+    const query = emprestimoSearch.trim().toLowerCase();
+    if (!query) {
+      return emprestimosAtivos;
+    }
+    return emprestimosAtivos.filter((emprestimo) => (
+      `${emprestimo.livroTitulo} ${emprestimo.usuarioNome}`.toLowerCase().includes(query)
+    ));
+  }, [emprestimosAtivos, emprestimoSearch]);
 
   function atualizarCampo(setter, field, value) {
     setter((prev) => ({ ...prev, [field]: value }));
@@ -64,14 +170,14 @@ export default function App() {
     try {
       await api.post('/livros', {
         ...livroForm,
-        anoPublicacao: Number(livroForm.anoPublicacao),
+        anoPublicacao: livroForm.anoPublicacao ? Number(livroForm.anoPublicacao) : null,
         quantidadeTotal: Number(livroForm.quantidadeTotal),
       });
       setLivroForm(initialLivro);
-      setMensagem('Livro cadastrado com sucesso.');
-      carregarTudo();
-    } catch {
-      setMensagem('Erro ao cadastrar livro.');
+      setMensagem({ text: 'Livro cadastrado com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao cadastrar livro.'), type: 'error' });
     }
   }
 
@@ -80,10 +186,10 @@ export default function App() {
     try {
       await api.post('/usuarios', usuarioForm);
       setUsuarioForm(initialUsuario);
-      setMensagem('Usuario cadastrado com sucesso.');
-      carregarTudo();
-    } catch {
-      setMensagem('Erro ao cadastrar usuario.');
+      setMensagem({ text: 'Usuario cadastrado com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao cadastrar usuario.'), type: 'error' });
     }
   }
 
@@ -96,107 +202,419 @@ export default function App() {
         diasEmprestimo: Number(emprestimoForm.diasEmprestimo),
       });
       setEmprestimoForm(initialEmprestimo);
-      setMensagem('Emprestimo registrado com sucesso.');
-      carregarTudo();
-    } catch {
-      setMensagem('Erro ao registrar emprestimo.');
+      setMensagem({ text: 'Emprestimo registrado com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao registrar emprestimo.'), type: 'error' });
     }
   }
 
   async function devolver(id) {
     try {
       await api.post(`/emprestimos/${id}/devolucao`);
-      setMensagem('Devolucao registrada com sucesso.');
-      carregarTudo();
-    } catch {
-      setMensagem('Erro ao devolver livro.');
+      setMensagem({ text: 'Devolucao registrada com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao devolver livro.'), type: 'error' });
     }
   }
 
-  return (
-    <div className="layout">
-      <header>
-        <h1>Sistema de Biblioteca</h1>
-        <p>Dashboard, catalogo de livros, usuarios e emprestimos</p>
-      </header>
+  async function deletarLivro(id) {
+    const confirmado = confirmActions ? window.confirm('Deseja realmente excluir este livro?') : true;
+    if (!confirmado) {
+      return;
+    }
 
-      {mensagem && <div className="alerta">{mensagem}</div>}
+    try {
+      await api.delete(`/livros/${id}`);
+      setMensagem({ text: 'Livro removido com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover livro.'), type: 'error' });
+    }
+  }
 
-      <section className="cards">
-        <Card titulo="Total de Livros" valor={stats?.totalLivros ?? 0} />
-        <Card titulo="Usuarios" valor={stats?.totalUsuarios ?? 0} />
-        <Card titulo="Emprestimos Ativos" valor={stats?.emprestimosAtivos ?? 0} />
-        <Card titulo="Livros Disponiveis" valor={stats?.livrosDisponiveis ?? 0} />
-      </section>
+  async function deletarUsuario(id) {
+    const confirmado = confirmActions ? window.confirm('Deseja realmente excluir este usuario?') : true;
+    if (!confirmado) {
+      return;
+    }
 
-      <section className="grid">
-        <article className="panel">
-          <h2>Cadastrar Livro</h2>
-          <form onSubmit={criarLivro}>
-            <input placeholder="Titulo" value={livroForm.titulo} onChange={(e) => atualizarCampo(setLivroForm, 'titulo', e.target.value)} required />
-            <input placeholder="Autor" value={livroForm.autor} onChange={(e) => atualizarCampo(setLivroForm, 'autor', e.target.value)} required />
-            <input placeholder="ISBN" value={livroForm.isbn} onChange={(e) => atualizarCampo(setLivroForm, 'isbn', e.target.value)} required />
-            <input placeholder="Categoria" value={livroForm.categoria} onChange={(e) => atualizarCampo(setLivroForm, 'categoria', e.target.value)} />
-            <input type="number" placeholder="Ano" value={livroForm.anoPublicacao} onChange={(e) => atualizarCampo(setLivroForm, 'anoPublicacao', e.target.value)} />
-            <input type="number" min="1" placeholder="Quantidade" value={livroForm.quantidadeTotal} onChange={(e) => atualizarCampo(setLivroForm, 'quantidadeTotal', e.target.value)} required />
-            <button type="submit">Salvar Livro</button>
-          </form>
-        </article>
+    try {
+      await api.delete(`/usuarios/${id}`);
+      setMensagem({ text: 'Usuario removido com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover usuario.'), type: 'error' });
+    }
+  }
 
-        <article className="panel">
-          <h2>Cadastrar Usuario</h2>
-          <form onSubmit={criarUsuario}>
-            <input placeholder="Nome" value={usuarioForm.nome} onChange={(e) => atualizarCampo(setUsuarioForm, 'nome', e.target.value)} required />
-            <input type="email" placeholder="Email" value={usuarioForm.email} onChange={(e) => atualizarCampo(setUsuarioForm, 'email', e.target.value)} required />
-            <input placeholder="Documento" value={usuarioForm.documento} onChange={(e) => atualizarCampo(setUsuarioForm, 'documento', e.target.value)} required />
-            <input placeholder="Telefone" value={usuarioForm.telefone} onChange={(e) => atualizarCampo(setUsuarioForm, 'telefone', e.target.value)} />
-            <button type="submit">Salvar Usuario</button>
-          </form>
-        </article>
+  async function login(event) {
+    event.preventDefault();
+    setLoginLoading(true);
+    try {
+      const response = await api.post('/auth/login', loginForm);
+      localStorage.setItem('authToken', response.data.token);
+      localStorage.setItem('adminUser', response.data.username);
+      setAuthToken(response.data.token);
+      setAdminUser(response.data.username);
+      setMensagem({ text: 'Login realizado com sucesso.', type: 'ok' });
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Falha ao autenticar admin.'), type: 'error' });
+    } finally {
+      setLoginLoading(false);
+    }
+  }
 
-        <article className="panel">
-          <h2>Novo Emprestimo</h2>
-          <form onSubmit={criarEmprestimo}>
-            <select value={emprestimoForm.livroId} onChange={(e) => atualizarCampo(setEmprestimoForm, 'livroId', e.target.value)} required>
-              <option value="">Selecione um livro</option>
-              {livros
-                .filter((livro) => livro.quantidadeDisponivel > 0)
-                .map((livro) => (
-                  <option key={livro.id} value={livro.id}>
-                    {livro.titulo} ({livro.quantidadeDisponivel} disponiveis)
-                  </option>
-                ))}
-            </select>
-            <select value={emprestimoForm.usuarioId} onChange={(e) => atualizarCampo(setEmprestimoForm, 'usuarioId', e.target.value)} required>
-              <option value="">Selecione um usuario</option>
-              {usuarios.map((usuario) => (
-                <option key={usuario.id} value={usuario.id}>
-                  {usuario.nome}
-                </option>
-              ))}
-            </select>
-            <input type="number" min="1" value={emprestimoForm.diasEmprestimo} onChange={(e) => atualizarCampo(setEmprestimoForm, 'diasEmprestimo', e.target.value)} />
-            <button type="submit">Registrar Emprestimo</button>
-          </form>
-        </article>
-      </section>
+  function logout(message) {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('adminUser');
+    setAuthToken('');
+    setAdminUser('');
+    setStats(null);
+    setLivros([]);
+    setUsuarios([]);
+    setEmprestimosAtivos([]);
+    setHistoricoEmprestimos([]);
+    if (message) {
+      setMensagem({ text: message, type: 'error' });
+    }
+  }
 
-      <section className="panel">
-        <h2>Emprestimos Ativos</h2>
-        <div className="lista">
-          {emprestimos.map((emp) => (
-            <div className="item" key={emp.id}>
-              <div>
-                <strong>{emp.livroTitulo}</strong>
-                <span>Usuario: {emp.usuarioNome}</span>
-                <span>Previsto para: {emp.dataPrevistaDevolucao}</span>
-              </div>
-              <button onClick={() => devolver(emp.id)}>Registrar Devolucao</button>
+  if (!authToken) {
+    return (
+      <div className="login-page">
+        <div className="login-box">
+          <h1>Sistema Biblioteca</h1>
+          <p>Acesso restrito ao administrador.</p>
+
+          {mensagem.text && (
+            <div className={`alerta ${mensagem.type === 'error' ? 'alerta-erro' : 'alerta-ok'}`}>
+              {mensagem.text}
             </div>
-          ))}
-          {emprestimos.length === 0 && <p>Nenhum emprestimo ativo.</p>}
+          )}
+
+          <form className="login-form" onSubmit={login}>
+            <label htmlFor="username">Usuario admin</label>
+            <input
+              id="username"
+              value={loginForm.username}
+              onChange={(e) => setLoginForm((prev) => ({ ...prev, username: e.target.value }))}
+              required
+            />
+
+            <label htmlFor="password">Senha</label>
+            <input
+              id="password"
+              type="password"
+              value={loginForm.password}
+              onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
+              required
+            />
+
+            <button type="submit" disabled={loginLoading}>
+              {loginLoading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
         </div>
-      </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <h1>Biblioteca</h1>
+        <p>Gestao profissional de acervo e emprestimos</p>
+        <nav>
+          {sections.map((section) => (
+            <button
+              key={section.id}
+              className={`nav-btn ${activeSection === section.id ? 'active' : ''}`}
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <main className="content">
+        <div className="frame">
+        <header className="topbar">
+          <div>
+            <h2>Painel de Controle</h2>
+            <p>{loading ? 'Atualizando dados...' : 'Dados sincronizados com a API.'}</p>
+          </div>
+          <div className="topbar-actions">
+            <span className="sync-chip">Ultima sincronizacao: {formatDateTime(lastSync)}</span>
+            <span className="sync-chip">Admin: {adminUser || 'logado'}</span>
+            <button className="refresh-btn" onClick={carregarTudo}>Atualizar</button>
+            <button className="danger-btn" onClick={() => logout('Logout realizado.')}>Sair</button>
+          </div>
+        </header>
+
+        {mensagem.text && (
+          <div className={`alerta ${mensagem.type === 'error' ? 'alerta-erro' : 'alerta-ok'}`}>
+            {mensagem.text}
+          </div>
+        )}
+
+        <section className="cards">
+          <Card titulo="Total de Livros" valor={stats?.totalLivros ?? 0} />
+          <Card titulo="Usuarios" valor={stats?.totalUsuarios ?? 0} />
+          <Card titulo="Emprestimos Ativos" valor={stats?.emprestimosAtivos ?? 0} />
+          <Card titulo="Livros Disponiveis" valor={stats?.livrosDisponiveis ?? 0} />
+        </section>
+
+        {activeSection === 'dashboard' && (
+          <>
+            <section className="panel">
+              <h3>Visao Geral</h3>
+              <p>
+                Use os modulos ao lado para cadastrar, consultar e remover livros e usuarios,
+                alem de controlar emprestimos e devolucoes.
+              </p>
+            </section>
+            <section className="panel">
+              <h3>Status Operacional</h3>
+              <div className="status-grid">
+                <StatusItem label="Acervo" value={(stats?.totalLivros ?? 0) > 0 ? 'Ativo' : 'Vazio'} tone={(stats?.totalLivros ?? 0) > 0 ? 'ok' : 'warn'} />
+                <StatusItem label="Usuarios" value={(stats?.totalUsuarios ?? 0) > 0 ? 'Ativo' : 'Sem cadastros'} tone={(stats?.totalUsuarios ?? 0) > 0 ? 'ok' : 'warn'} />
+                <StatusItem label="Emprestimos" value={(stats?.emprestimosAtivos ?? 0) > 0 ? 'Em andamento' : 'Sem movimentacao'} tone={(stats?.emprestimosAtivos ?? 0) > 0 ? 'info' : 'ok'} />
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeSection === 'livros' && (
+          <>
+            <section className="panel">
+              <h3>Cadastrar Livro</h3>
+              <form className="form-grid" onSubmit={criarLivro}>
+                <input placeholder="Titulo" value={livroForm.titulo} onChange={(e) => atualizarCampo(setLivroForm, 'titulo', e.target.value)} required />
+                <input placeholder="Autor" value={livroForm.autor} onChange={(e) => atualizarCampo(setLivroForm, 'autor', e.target.value)} required />
+                <input placeholder="ISBN" value={livroForm.isbn} onChange={(e) => atualizarCampo(setLivroForm, 'isbn', e.target.value)} required />
+                <input placeholder="Categoria" value={livroForm.categoria} onChange={(e) => atualizarCampo(setLivroForm, 'categoria', e.target.value)} />
+                <input type="number" placeholder="Ano" value={livroForm.anoPublicacao} onChange={(e) => atualizarCampo(setLivroForm, 'anoPublicacao', e.target.value)} />
+                <input type="number" min="1" placeholder="Quantidade" value={livroForm.quantidadeTotal} onChange={(e) => atualizarCampo(setLivroForm, 'quantidadeTotal', e.target.value)} required />
+                <button type="submit">Salvar Livro</button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h3>Livros Cadastrados</h3>
+              <div className="table-toolbar">
+                <input
+                  value={livroSearch}
+                  onChange={(e) => setLivroSearch(e.target.value)}
+                  placeholder="Buscar por titulo, autor ou ISBN"
+                />
+                <span className="count-chip">{livrosFiltrados.length} resultados</span>
+              </div>
+              <DataTable
+                columns={['Titulo', 'Autor', 'ISBN', 'Disponivel', 'Total', 'Acoes']}
+                rows={livrosFiltrados.map((livro) => [
+                  livro.titulo,
+                  livro.autor,
+                  livro.isbn,
+                  <span className={`badge ${livro.quantidadeDisponivel > 0 ? 'badge-ok' : 'badge-warn'}`} key={`disp-${livro.id}`}>
+                    {livro.quantidadeDisponivel}
+                  </span>,
+                  String(livro.quantidadeTotal),
+                  <button className="danger-btn" key={`delete-livro-${livro.id}`} onClick={() => deletarLivro(livro.id)}>
+                    Excluir
+                  </button>,
+                ])}
+                emptyMessage="Nenhum livro cadastrado."
+              />
+            </section>
+          </>
+        )}
+
+        {activeSection === 'usuarios' && (
+          <>
+            <section className="panel">
+              <h3>Cadastrar Usuario</h3>
+              <form className="form-grid" onSubmit={criarUsuario}>
+                <input placeholder="Nome" value={usuarioForm.nome} onChange={(e) => atualizarCampo(setUsuarioForm, 'nome', e.target.value)} required />
+                <input type="email" placeholder="Email" value={usuarioForm.email} onChange={(e) => atualizarCampo(setUsuarioForm, 'email', e.target.value)} required />
+                <input placeholder="Documento" value={usuarioForm.documento} onChange={(e) => atualizarCampo(setUsuarioForm, 'documento', e.target.value)} required />
+                <input placeholder="Telefone" value={usuarioForm.telefone} onChange={(e) => atualizarCampo(setUsuarioForm, 'telefone', e.target.value)} />
+                <button type="submit">Salvar Usuario</button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h3>Usuarios Cadastrados</h3>
+              <div className="table-toolbar">
+                <input
+                  value={usuarioSearch}
+                  onChange={(e) => setUsuarioSearch(e.target.value)}
+                  placeholder="Buscar por nome, email ou documento"
+                />
+                <span className="count-chip">{usuariosFiltrados.length} resultados</span>
+              </div>
+              <DataTable
+                columns={['Nome', 'Email', 'Documento', 'Cadastro', 'Acoes']}
+                rows={usuariosFiltrados.map((usuario) => [
+                  usuario.nome,
+                  usuario.email,
+                  usuario.documento,
+                  formatDate(usuario.dataCadastro),
+                  <button className="danger-btn" key={`delete-usuario-${usuario.id}`} onClick={() => deletarUsuario(usuario.id)}>
+                    Excluir
+                  </button>,
+                ])}
+                emptyMessage="Nenhum usuario cadastrado."
+              />
+            </section>
+          </>
+        )}
+
+        {activeSection === 'emprestimos' && (
+          <>
+            <section className="panel">
+              <h3>Novo Emprestimo</h3>
+              <form className="form-grid" onSubmit={criarEmprestimo}>
+                <select value={emprestimoForm.livroId} onChange={(e) => atualizarCampo(setEmprestimoForm, 'livroId', e.target.value)} required>
+                  <option value="">Selecione um livro</option>
+                  {livros
+                    .filter((livro) => livro.quantidadeDisponivel > 0)
+                    .map((livro) => (
+                      <option key={livro.id} value={livro.id}>
+                        {livro.titulo} ({livro.quantidadeDisponivel} disponiveis)
+                      </option>
+                    ))}
+                </select>
+                <select value={emprestimoForm.usuarioId} onChange={(e) => atualizarCampo(setEmprestimoForm, 'usuarioId', e.target.value)} required>
+                  <option value="">Selecione um usuario</option>
+                  {usuarios.map((usuario) => (
+                    <option key={usuario.id} value={usuario.id}>
+                      {usuario.nome}
+                    </option>
+                  ))}
+                </select>
+                <input type="number" min="1" value={emprestimoForm.diasEmprestimo} onChange={(e) => atualizarCampo(setEmprestimoForm, 'diasEmprestimo', e.target.value)} />
+                <button type="submit">Registrar Emprestimo</button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h3>Emprestimos Ativos</h3>
+              <div className="table-toolbar">
+                <input
+                  value={emprestimoSearch}
+                  onChange={(e) => setEmprestimoSearch(e.target.value)}
+                  placeholder="Buscar por livro ou usuario"
+                />
+                <span className="count-chip">{emprestimosFiltrados.length} resultados</span>
+              </div>
+              <DataTable
+                columns={['Livro', 'Usuario', 'Emprestimo', 'Previsto', 'Acoes']}
+                rows={emprestimosFiltrados.map((emp) => [
+                  emp.livroTitulo,
+                  emp.usuarioNome,
+                  formatDate(emp.dataEmprestimo),
+                  formatDate(emp.dataPrevistaDevolucao),
+                  <button key={`devolver-${emp.id}`} onClick={() => devolver(emp.id)}>Registrar Devolucao</button>,
+                ])}
+                emptyMessage="Nenhum emprestimo ativo."
+              />
+            </section>
+
+            <section className="panel">
+              <h3>Historico de Emprestimos</h3>
+              <DataTable
+                columns={['Livro', 'Usuario', 'Status', 'Data de Devolucao']}
+                rows={historicoEmprestimos.map((emp) => [
+                  emp.livroTitulo,
+                  emp.usuarioNome,
+                  emp.status,
+                  formatDate(emp.dataDevolucao),
+                ])}
+                emptyMessage="Sem historico de emprestimos."
+              />
+            </section>
+          </>
+        )}
+
+        {activeSection === 'configuracoes' && (
+          <section className="panel">
+            <h3>Configuracoes de Interface</h3>
+            <div className="settings-row">
+              <div>
+                <strong>Tema da Aplicacao</strong>
+                <p>Alterne entre modo claro e modo escuro.</p>
+              </div>
+              <button onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}>
+                {theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro'}
+              </button>
+            </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Modo Compacto</strong>
+                  <p>Reduz espacamentos para maior densidade de informacao.</p>
+                </div>
+                <button onClick={() => setCompactMode((prev) => !prev)}>
+                  {compactMode ? 'Desativar modo compacto' : 'Ativar modo compacto'}
+                </button>
+              </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Confirmacao de Acoes Criticas</strong>
+                  <p>Exibe janela de confirmacao antes de excluir itens.</p>
+                </div>
+                <button onClick={() => setConfirmActions((prev) => !prev)}>
+                  {confirmActions ? 'Desativar confirmacao' : 'Ativar confirmacao'}
+                </button>
+              </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Autoatualizacao</strong>
+                  <p>Sincroniza os dados automaticamente.</p>
+                </div>
+                <select
+                  value={autoRefreshSeconds}
+                  onChange={(e) => setAutoRefreshSeconds(Number(e.target.value))}
+                >
+                  <option value={0}>Desativada</option>
+                  <option value={30}>A cada 30 segundos</option>
+                  <option value={60}>A cada 1 minuto</option>
+                  <option value={120}>A cada 2 minutos</option>
+                </select>
+              </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Modulo Inicial</strong>
+                  <p>Define qual tela abre por padrao.</p>
+                </div>
+                <select
+                  value={activeSection}
+                  onChange={(e) => setActiveSection(e.target.value)}
+                >
+                  {sections
+                    .filter((section) => section.id !== 'configuracoes')
+                    .map((section) => (
+                      <option key={section.id} value={section.id}>{section.label}</option>
+                    ))}
+                </select>
+              </div>
+          </section>
+        )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function StatusItem({ label, value, tone }) {
+  return (
+    <div className="status-item">
+      <span>{label}</span>
+      <strong className={`badge ${tone === 'ok' ? 'badge-ok' : tone === 'warn' ? 'badge-warn' : 'badge-info'}`}>
+        {value}
+      </strong>
     </div>
   );
 }
@@ -208,4 +626,60 @@ function Card({ titulo, valor }) {
       <p>{valor}</p>
     </article>
   );
+}
+
+function DataTable({ columns, rows, emptyMessage }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={columns.length} className="empty-row">{emptyMessage}</td>
+            </tr>
+          )}
+          {rows.map((row, rowIndex) => (
+            <tr key={`${columns[0]}-${rowIndex}`}>
+              {row.map((cell, cellIndex) => (
+                <td key={`${columns[cellIndex]}-${rowIndex}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatDate(value) {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString('pt-BR');
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return '-';
+  }
+
+  return value.toLocaleString('pt-BR');
+}
+
+function getApiErrorMessage(error, fallback) {
+  const apiMessage = error?.response?.data?.message;
+  return typeof apiMessage === 'string' && apiMessage.trim() ? apiMessage : fallback;
 }

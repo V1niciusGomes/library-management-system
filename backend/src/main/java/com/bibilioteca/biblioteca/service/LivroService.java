@@ -7,15 +7,18 @@ import org.springframework.stereotype.Service;
 import com.bibilioteca.biblioteca.dto.LivroRequestDto;
 import com.bibilioteca.biblioteca.dto.LivroResponseDto;
 import com.bibilioteca.biblioteca.model.Livro;
+import com.bibilioteca.biblioteca.repository.EmprestimoRepository;
 import com.bibilioteca.biblioteca.repository.LivroRepository;
 
 @Service
 public class LivroService {
 
     private final LivroRepository livroRepository;
+    private final EmprestimoRepository emprestimoRepository;
 
-    public LivroService(LivroRepository livroRepository) {
+    public LivroService(LivroRepository livroRepository, EmprestimoRepository emprestimoRepository) {
         this.livroRepository = livroRepository;
+        this.emprestimoRepository = emprestimoRepository;
     }
 
     public List<LivroResponseDto> listar() {
@@ -58,6 +61,11 @@ public class LivroService {
 
     public void remover(Long id) {
         Livro livro = obterLivro(id);
+
+        if (emprestimoRepository.existsByLivro_Id(id)) {
+            throw new BusinessException("Nao e possivel excluir livro com emprestimos vinculados.");
+        }
+
         livroRepository.delete(livro);
     }
 

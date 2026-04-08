@@ -7,15 +7,18 @@ import org.springframework.stereotype.Service;
 import com.bibilioteca.biblioteca.dto.UsuarioRequestDto;
 import com.bibilioteca.biblioteca.dto.UsuarioResponseDto;
 import com.bibilioteca.biblioteca.model.Usuario;
+import com.bibilioteca.biblioteca.repository.EmprestimoRepository;
 import com.bibilioteca.biblioteca.repository.UsuarioRepository;
 
 @Service
 public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
+    private final EmprestimoRepository emprestimoRepository;
 
-    public UsuarioService(UsuarioRepository usuarioRepository) {
+    public UsuarioService(UsuarioRepository usuarioRepository, EmprestimoRepository emprestimoRepository) {
         this.usuarioRepository = usuarioRepository;
+        this.emprestimoRepository = emprestimoRepository;
     }
 
     public List<UsuarioResponseDto> listar() {
@@ -59,6 +62,11 @@ public class UsuarioService {
 
     public void remover(Long id) {
         Usuario usuario = obterUsuario(id);
+
+        if (emprestimoRepository.existsByUsuario_Id(id)) {
+            throw new BusinessException("Nao e possivel excluir usuario com emprestimos vinculados.");
+        }
+
         usuarioRepository.delete(usuario);
     }
 
