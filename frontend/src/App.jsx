@@ -75,18 +75,21 @@ export default function App() {
       setEmprestimosAtivos(emprestimosAtivosRes.data);
       setHistoricoEmprestimos(emprestimosRes.data);
       setLastSync(new Date());
+      setMensagem({ text: '', type: 'ok' });
     } catch (error) {
       const failedEndpoint =
         error?.config?.url?.replace('http://localhost:8080/api', '') ||
         error?.config?.url ||
         'desconhecido';
+      const status = error?.response?.status;
+      const detalhe = error?.response?.data?.message;
 
       if (error?.response?.status === 401) {
         logout('Sessao expirada. Faca login novamente.');
         return;
       }
       setMensagem({
-        text: `Nao foi possivel carregar os dados em ${failedEndpoint}. Verifique a API ou o login do admin.`,
+        text: `Nao foi possivel carregar os dados em ${failedEndpoint}${status ? ` (HTTP ${status})` : ''}. ${detalhe || 'Verifique a API ou o login do admin.'}`,
         type: 'error',
       });
     } finally {
@@ -294,6 +297,7 @@ export default function App() {
       setAuthToken(response.data.token);
       setAdminUser(response.data.username);
       setMensagem({ text: 'Login realizado com sucesso.', type: 'ok' });
+      await carregarTudo();
     } catch (error) {
       setMensagem({ text: getApiErrorMessage(error, 'Falha ao autenticar admin.'), type: 'error' });
     } finally {
