@@ -6,6 +6,7 @@ const initialLivro = {
   autor: '',
   isbn: '',
   categoria: '',
+  sinopse: '',
   anoPublicacao: '',
   quantidadeTotal: 1,
 };
@@ -55,6 +56,8 @@ export default function App() {
   const [usuarioSearch, setUsuarioSearch] = useState('');
   const [emprestimoSearch, setEmprestimoSearch] = useState('');
   const [lastSync, setLastSync] = useState(null);
+  const [multaPorDia, setMultaPorDia] = useState(Number(localStorage.getItem('multaPorDia') || '2.5'));
+  const [livroSinopseSelecionado, setLivroSinopseSelecionado] = useState(null);
 
   async function carregarTudo() {
     if (!authToken) {
@@ -154,6 +157,10 @@ export default function App() {
   }, [activeSection]);
 
   useEffect(() => {
+    localStorage.setItem('multaPorDia', String(multaPorDia));
+  }, [multaPorDia]);
+
+  useEffect(() => {
     if (!authToken || autoRefreshSeconds <= 0) {
       return undefined;
     }
@@ -194,6 +201,67 @@ export default function App() {
       `${emprestimo.livroTitulo} ${emprestimo.usuarioNome}`.toLowerCase().includes(query)
     ));
   }, [emprestimosAtivos, emprestimoSearch]);
+
+  const emprestimosAtrasados = useMemo(() => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    return emprestimosAtivos.filter((emprestimo) => {
+      const prevista = new Date(emprestimo.dataPrevistaDevolucao);
+      prevista.setHours(0, 0, 0, 0);
+      return prevista < hoje;
+    });
+  }, [emprestimosAtivos]);
+
+  const livrosBaixoEstoque = useMemo(() => (
+    livros.filter((livro) => (livro.quantidadeDisponivel ?? 0) <= 1)
+  ), [livros]);
+
+  const livrosComVinculo = useMemo(() => {
+    const ids = new Set();
+    for (const emprestimo of historicoEmprestimos) {
+      if (emprestimo?.livroId) {
+        ids.add(emprestimo.livroId);
+      }
+    }
+    for (const emprestimo of emprestimosAtivos) {
+      if (emprestimo?.livroId) {
+        ids.add(emprestimo.livroId);
+      }
+    }
+    return ids;
+  }, [historicoEmprestimos, emprestimosAtivos]);
+
+  const pendenciasPorUsuario = useMemo(() => {
+    const mapa = new Map();
+
+    for (const emprestimo of emprestimosAtrasados) {
+      const diasAtraso = diffDaysFromToday(emprestimo.dataPrevistaDevolucao);
+      const multa = diasAtraso * multaPorDia;
+      const chave = emprestimo.usuarioId;
+
+      if (!mapa.has(chave)) {
+        mapa.set(chave, {
+          usuarioId: emprestimo.usuarioId,
+          usuarioNome: emprestimo.usuarioNome,
+          livrosAtrasados: 0,
+          diasAtrasoTotal: 0,
+          multaTotal: 0,
+        });
+      }
+
+      const item = mapa.get(chave);
+      item.livrosAtrasados += 1;
+      item.diasAtrasoTotal += diasAtraso;
+      item.multaTotal += multa;
+    }
+
+    return Array.from(mapa.values()).sort((a, b) => b.multaTotal - a.multaTotal);
+  }, [emprestimosAtrasados, multaPorDia]);
+
+  const multasTotais = useMemo(() => (
+    pendenciasPorUsuario.reduce((acc, item) => acc + item.multaTotal, 0)
+  ), [pendenciasPorUsuario]);
 
   function atualizarCampo(setter, field, value) {
     setter((prev) => ({ ...prev, [field]: value }));
@@ -337,6 +405,7 @@ export default function App() {
     return (
       <div className="login-page">
         <div className="login-box">
+          <span className="eyebrow">Painel Administrativo</span>
           <h1>Sistema Biblioteca</h1>
           <p>Acesso restrito ao administrador.</p>
 
@@ -393,6 +462,10 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="sidebar-footer">
+          <span>Sistema online</span>
+          <strong>{formatDateTime(lastSync)}</strong>
+        </div>
       </aside>
 
       <main className="content">
@@ -421,6 +494,9 @@ export default function App() {
           <Card titulo="Usuarios" valor={stats?.totalUsuarios ?? 0} />
           <Card titulo="Emprestimos Ativos" valor={stats?.emprestimosAtivos ?? 0} />
           <Card titulo="Livros Disponiveis" valor={stats?.livrosDisponiveis ?? 0} />
+          <Card titulo="Atrasados" valor={emprestimosAtrasados.length} />
+          <Card titulo="Baixo Estoque" valor={livrosBaixoEstoque.length} />
+          <Card titulo="Multas (estimativa)" valor={formatCurrency(multasTotais)} />
         </section>
 
         {activeSection === 'dashboard' && (
@@ -440,6 +516,27 @@ export default function App() {
                 <StatusItem label="Emprestimos" value={(stats?.emprestimosAtivos ?? 0) > 0 ? 'Em andamento' : 'Sem movimentacao'} tone={(stats?.emprestimosAtivos ?? 0) > 0 ? 'info' : 'ok'} />
               </div>
             </section>
+            <section className="panel">
+              <h3>Alertas de Gestao</h3>
+              <div className="status-grid">
+                <StatusItem label="Emprestimos atrasados" value={String(emprestimosAtrasados.length)} tone={emprestimosAtrasados.length > 0 ? 'warn' : 'ok'} />
+                <StatusItem label="Livros com baixo estoque" value={String(livrosBaixoEstoque.length)} tone={livrosBaixoEstoque.length > 0 ? 'warn' : 'ok'} />
+                <StatusItem label="Total de movimentacoes" value={String(stats?.totalEmprestimos ?? 0)} tone='info' />
+              </div>
+            </section>
+            <section className="panel">
+              <h3>Usuarios com Pendencias</h3>
+              <DataTable
+                columns={['Usuario', 'Livros atrasados', 'Dias em atraso', 'Multa estimada']}
+                rows={pendenciasPorUsuario.map((item) => [
+                  item.usuarioNome,
+                  String(item.livrosAtrasados),
+                  String(item.diasAtrasoTotal),
+                  formatCurrency(item.multaTotal),
+                ])}
+                emptyMessage="Nenhum usuario com pendencias no momento."
+              />
+            </section>
           </>
         )}
 
@@ -452,6 +549,7 @@ export default function App() {
                 <input placeholder="Autor" value={livroForm.autor} onChange={(e) => atualizarCampo(setLivroForm, 'autor', e.target.value)} required />
                 <input placeholder="ISBN" value={livroForm.isbn} onChange={(e) => atualizarCampo(setLivroForm, 'isbn', e.target.value)} required />
                 <input placeholder="Categoria" value={livroForm.categoria} onChange={(e) => atualizarCampo(setLivroForm, 'categoria', e.target.value)} />
+                <textarea placeholder="Sinopse" value={livroForm.sinopse} onChange={(e) => atualizarCampo(setLivroForm, 'sinopse', e.target.value)} rows={3} />
                 <input type="number" placeholder="Ano" value={livroForm.anoPublicacao} onChange={(e) => atualizarCampo(setLivroForm, 'anoPublicacao', e.target.value)} />
                 <input type="number" min="1" placeholder="Quantidade" value={livroForm.quantidadeTotal} onChange={(e) => atualizarCampo(setLivroForm, 'quantidadeTotal', e.target.value)} required />
                 <button type="submit">Salvar Livro</button>
@@ -478,11 +576,49 @@ export default function App() {
                     {livro.quantidadeDisponivel}
                   </span>,
                   String(livro.quantidadeTotal),
-                  <button className="danger-btn" key={`delete-livro-${livro.id}`} onClick={() => deletarLivro(livro.id)}>
-                    Excluir
-                  </button>,
+                  <div className="row-actions" key={`acoes-livro-${livro.id}`}>
+                    <button type="button" onClick={() => setLivroSinopseSelecionado(livro)}>Sinopse</button>
+                    {!livrosComVinculo.has(livro.id) ? (
+                      <button className="danger-btn" type="button" onClick={() => deletarLivro(livro.id)}>
+                        Excluir
+                      </button>
+                    ) : (
+                      <span className="badge badge-info">Vinculado a cliente</span>
+                    )}
+                  </div>,
                 ])}
                 emptyMessage="Nenhum livro cadastrado."
+              />
+            </section>
+
+            <section className="panel">
+              <h3>Alerta de Baixo Estoque</h3>
+              <DataTable
+                columns={['Titulo', 'Autor', 'Disponivel', 'Total']}
+                rows={livrosBaixoEstoque.map((livro) => [
+                  livro.titulo,
+                  livro.autor,
+                  String(livro.quantidadeDisponivel),
+                  String(livro.quantidadeTotal),
+                ])}
+                emptyMessage="Nenhum livro em baixo estoque."
+              />
+            </section>
+
+            <section className="panel">
+              <h3>Resumo dos Livros em Estoque</h3>
+              <DataTable
+                columns={['Livro', 'Disponivel', 'Resumo']}
+                rows={livros
+                  .filter((livro) => (livro.quantidadeDisponivel ?? 0) > 0)
+                  .map((livro) => [
+                    livro.titulo,
+                    String(livro.quantidadeDisponivel),
+                    <button type="button" onClick={() => setLivroSinopseSelecionado(livro)}>
+                      Abrir sinopse
+                    </button>,
+                  ])}
+                emptyMessage="Nenhum livro disponivel em estoque."
               />
             </section>
           </>
@@ -580,6 +716,34 @@ export default function App() {
             </section>
 
             <section className="panel">
+              <h3>Emprestimos Atrasados</h3>
+              <DataTable
+                columns={['Livro', 'Usuario', 'Previsto', 'Dias em atraso']}
+                rows={emprestimosAtrasados.map((emp) => [
+                  emp.livroTitulo,
+                  emp.usuarioNome,
+                  formatDate(emp.dataPrevistaDevolucao),
+                  String(diffDaysFromToday(emp.dataPrevistaDevolucao)),
+                ])}
+                emptyMessage="Nenhum emprestimo atrasado."
+              />
+            </section>
+
+            <section className="panel">
+              <h3>Pendencias e Multas por Usuario</h3>
+              <DataTable
+                columns={['Usuario', 'Livros atrasados', 'Dias em atraso', 'Multa estimada']}
+                rows={pendenciasPorUsuario.map((item) => [
+                  item.usuarioNome,
+                  String(item.livrosAtrasados),
+                  String(item.diasAtrasoTotal),
+                  formatCurrency(item.multaTotal),
+                ])}
+                emptyMessage="Nenhuma pendencia ativa."
+              />
+            </section>
+
+            <section className="panel">
               <h3>Historico de Emprestimos</h3>
               <DataTable
                 columns={['Livro', 'Usuario', 'Status', 'Data de Devolucao']}
@@ -656,7 +820,44 @@ export default function App() {
                     ))}
                 </select>
               </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Exportacao de Dados (CSV)</strong>
+                  <p>Baixe relatórios rápidos para acompanhamento.</p>
+                </div>
+                <div className="settings-actions">
+                  <button type="button" onClick={() => exportarLivrosCsv(livros)}>Exportar Livros</button>
+                  <button type="button" onClick={() => exportarUsuariosCsv(usuarios)}>Exportar Usuarios</button>
+                  <button type="button" onClick={() => exportarEmprestimosCsv(historicoEmprestimos)}>Exportar Emprestimos</button>
+                  <button type="button" onClick={() => exportarPendenciasCsv(pendenciasPorUsuario)}>Exportar Pendencias</button>
+                </div>
+              </div>
+              <div className="settings-row">
+                <div>
+                  <strong>Multa por Dia de Atraso</strong>
+                  <p>Valor usado no calculo estimado de multas.</p>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={multaPorDia}
+                  onChange={(e) => setMultaPorDia(Number(e.target.value || 0))}
+                />
+              </div>
           </section>
+        )}
+
+        {livroSinopseSelecionado && (
+          <div className="modal-backdrop" onClick={() => setLivroSinopseSelecionado(null)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3>{livroSinopseSelecionado.titulo}</h3>
+              <p><strong>Autor:</strong> {livroSinopseSelecionado.autor}</p>
+              <p><strong>Categoria:</strong> {livroSinopseSelecionado.categoria || '-'}</p>
+              <p className="sinopse-texto">{livroSinopseSelecionado.sinopse || 'Sem sinopse cadastrada para este livro.'}</p>
+              <button type="button" onClick={() => setLivroSinopseSelecionado(null)}>Fechar</button>
+            </div>
+          </div>
         )}
         </div>
       </main>
@@ -738,4 +939,78 @@ function formatDateTime(value) {
 function getApiErrorMessage(error, fallback) {
   const apiMessage = error?.response?.data?.message;
   return typeof apiMessage === 'string' && apiMessage.trim() ? apiMessage : fallback;
+}
+
+function diffDaysFromToday(dateValue) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const data = new Date(dateValue);
+  data.setHours(0, 0, 0, 0);
+  const diffMs = hoje.getTime() - data.getTime();
+  return diffMs > 0 ? Math.floor(diffMs / (1000 * 60 * 60 * 24)) : 0;
+}
+
+function exportarLivrosCsv(livros) {
+  exportCsv('livros.csv', ['id', 'titulo', 'autor', 'isbn', 'sinopse', 'disponivel', 'total'],
+    livros.map((livro) => [
+      livro.id,
+      livro.titulo,
+      livro.autor,
+      livro.isbn,
+      livro.sinopse,
+      livro.quantidadeDisponivel,
+      livro.quantidadeTotal,
+    ]));
+}
+
+function exportarUsuariosCsv(usuarios) {
+  exportCsv('usuarios.csv', ['id', 'nome', 'email', 'documento', 'telefone'],
+    usuarios.map((usuario) => [
+      usuario.id,
+      usuario.nome,
+      usuario.email,
+      usuario.documento,
+      usuario.telefone,
+    ]));
+}
+
+function exportarEmprestimosCsv(emprestimos) {
+  exportCsv('emprestimos.csv', ['id', 'livro', 'usuario', 'status', 'emprestimo', 'prevista', 'devolucao'],
+    emprestimos.map((emprestimo) => [
+      emprestimo.id,
+      emprestimo.livroTitulo,
+      emprestimo.usuarioNome,
+      emprestimo.status,
+      emprestimo.dataEmprestimo,
+      emprestimo.dataPrevistaDevolucao,
+      emprestimo.dataDevolucao,
+    ]));
+}
+
+function exportarPendenciasCsv(pendencias) {
+  exportCsv('pendencias_multas.csv', ['usuario', 'livros_atrasados', 'dias_atraso', 'multa_estimada'],
+    pendencias.map((item) => [
+      item.usuarioNome,
+      item.livrosAtrasados,
+      item.diasAtrasoTotal,
+      item.multaTotal.toFixed(2),
+    ]));
+}
+
+function exportCsv(fileName, headers, rows) {
+  const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+  const csv = [headers.join(','), ...rows.map((row) => row.map(escape).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }

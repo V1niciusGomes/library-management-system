@@ -26,6 +26,9 @@ public class Livro {
 
     private String categoria;
 
+    @Column(length = 2000)
+    private String sinopse;
+
     private Integer anoPublicacao;
 
     @Column(nullable = false)
@@ -72,6 +75,14 @@ public class Livro {
 
     public void setCategoria(String categoria) {
         this.categoria = categoria;
+    }
+
+    public String getSinopse() {
+        return sinopse;
+    }
+
+    public void setSinopse(String sinopse) {
+        this.sinopse = sinopse;
     }
 
     public Integer getAnoPublicacao() {

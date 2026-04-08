@@ -83,6 +83,7 @@ public class LivroService {
         livro.setAutor(request.getAutor());
         livro.setIsbn(request.getIsbn());
         livro.setCategoria(request.getCategoria());
+        livro.setSinopse(request.getSinopse());
         livro.setAnoPublicacao(request.getAnoPublicacao());
         livro.setQuantidadeTotal(request.getQuantidadeTotal());
     }
@@ -94,6 +95,7 @@ public class LivroService {
         dto.setAutor(livro.getAutor());
         dto.setIsbn(livro.getIsbn());
         dto.setCategoria(livro.getCategoria());
+        dto.setSinopse(livro.getSinopse());
         dto.setAnoPublicacao(livro.getAnoPublicacao());
         dto.setQuantidadeTotal(livro.getQuantidadeTotal());
         dto.setQuantidadeDisponivel(livro.getQuantidadeDisponivel());

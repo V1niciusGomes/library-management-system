@@ -7,6 +7,7 @@ public class LivroResponseDto {
     private String autor;
     private String isbn;
     private String categoria;
+    private String sinopse;
     private Integer anoPublicacao;
     private Integer quantidadeTotal;
     private Integer quantidadeDisponivel;
@@ -49,6 +50,14 @@ public class LivroResponseDto {
 
     public void setCategoria(String categoria) {
         this.categoria = categoria;
+    }
+
+    public String getSinopse() {
+        return sinopse;
+    }
+
+    public void setSinopse(String sinopse) {
+        this.sinopse = sinopse;
     }
 
     public Integer getAnoPublicacao() {
