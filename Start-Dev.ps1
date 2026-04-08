@@ -16,13 +16,10 @@ if (-not (Test-Path $frontendPath)) {
     throw "frontend folder not found in project root."
 }
 
-# Prefer the VS Code Java runtime when JAVA_HOME is not configured.
-if (-not $env:JAVA_HOME) {
-    $vscodeJava = "C:\Users\vinicius_sens\.vscode\extensions\redhat.java-1.53.0-win32-x64\jre\21.0.10-win32-x86_64"
-    if (Test-Path $vscodeJava) {
-        $env:JAVA_HOME = $vscodeJava
-        $env:Path = "$env:JAVA_HOME\bin;$env:Path"
-    }
+$vscodeJava = "C:\Users\vinicius_sens\.vscode\extensions\redhat.java-1.53.0-win32-x64\jre\21.0.10-win32-x86_64"
+if (Test-Path $vscodeJava) {
+    $env:JAVA_HOME = $vscodeJava
+    $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 }
 
 if ($InstallFrontendDeps) {
@@ -32,7 +29,7 @@ if ($InstallFrontendDeps) {
     Pop-Location
 }
 
-$backendCommand = "Set-Location '$projectRoot'; `"`$env:SPRING_PROFILES_ACTIVE='$BackendProfile'; .\mvnw.cmd spring-boot:run`""
+$backendCommand = "Set-Location '$projectRoot'; `$env:SPRING_PROFILES_ACTIVE='$BackendProfile'; .\mvnw.cmd spring-boot:run"
 $frontendCommand = "Set-Location '$frontendPath'; npm run dev"
 
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCommand -WindowStyle Normal

@@ -284,6 +284,16 @@ button:hover {
   background: var(--danger-dark);
 }
 
+.secondary-btn {
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--line);
+}
+
+.secondary-btn:hover {
+  background: color-mix(in srgb, var(--bg-main) 65%, var(--bg-panel));
+}
+
 .table-toolbar {
   display: flex;
   gap: 8px;

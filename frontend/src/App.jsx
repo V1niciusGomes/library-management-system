@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import api from './api';
+import api, { authApi } from './api';
 
 const initialLivro = {
   titulo: '',
@@ -63,13 +63,11 @@ export default function App() {
 
     setLoading(true);
     try {
-      const [statsRes, livrosRes, usuariosRes, emprestimosAtivosRes, emprestimosRes] = await Promise.all([
-        api.get('/dashboard/estatisticas'),
-        api.get('/livros'),
-        api.get('/usuarios'),
-        api.get('/emprestimos/ativos'),
-        api.get('/emprestimos'),
-      ]);
+      const statsRes = await api.get('/dashboard/estatisticas');
+      const livrosRes = await api.get('/livros');
+      const usuariosRes = await api.get('/usuarios');
+      const emprestimosAtivosRes = await api.get('/emprestimos/ativos');
+      const emprestimosRes = await api.get('/emprestimos');
 
       setStats(statsRes.data);
       setLivros(livrosRes.data);
@@ -78,12 +76,17 @@ export default function App() {
       setHistoricoEmprestimos(emprestimosRes.data);
       setLastSync(new Date());
     } catch (error) {
+      const failedEndpoint =
+        error?.config?.url?.replace('http://localhost:8080/api', '') ||
+        error?.config?.url ||
+        'desconhecido';
+
       if (error?.response?.status === 401) {
         logout('Sessao expirada. Faca login novamente.');
         return;
       }
       setMensagem({
-        text: 'Nao foi possivel carregar os dados. Verifique se a API esta ativa.',
+        text: `Nao foi possivel carregar os dados em ${failedEndpoint}. Verifique a API ou o login do admin.`,
         type: 'error',
       });
     } finally {
@@ -96,6 +99,34 @@ export default function App() {
       carregarTudo();
     }
   }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
+      return;
+    }
+
+    let active = true;
+
+    api.get('/dashboard/estatisticas')
+      .then(() => {
+        if (active) {
+          carregarTudo();
+        }
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+
+        if (error?.response?.status === 401) {
+          logout('Sessao invalida ou expirada. Faça login novamente.');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -253,7 +284,11 @@ export default function App() {
     event.preventDefault();
     setLoginLoading(true);
     try {
-      const response = await api.post('/auth/login', loginForm);
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('adminUser');
+      localStorage.removeItem('defaultSection');
+      localStorage.removeItem('autoRefreshSeconds');
+      const response = await authApi.post('/auth/login', loginForm);
       localStorage.setItem('authToken', response.data.token);
       localStorage.setItem('adminUser', response.data.username);
       setAuthToken(response.data.token);
@@ -279,6 +314,19 @@ export default function App() {
     if (message) {
       setMensagem({ text: message, type: 'error' });
     }
+  }
+
+  function limparSessao() {
+    localStorage.clear();
+    setActiveSection('dashboard');
+    setTheme('light');
+    setCompactMode(false);
+    setConfirmActions(true);
+    setAutoRefreshSeconds(0);
+    setAuthToken('');
+    setAdminUser('');
+    setLoginForm({ username: 'admin', password: 'admin123' });
+    setMensagem({ text: 'Sessao limpa com sucesso.', type: 'ok' });
   }
 
   if (!authToken) {
@@ -314,6 +362,10 @@ export default function App() {
 
             <button type="submit" disabled={loginLoading}>
               {loginLoading ? 'Entrando...' : 'Entrar'}
+            </button>
+
+            <button type="button" className="secondary-btn" onClick={limparSessao}>
+              Limpar sessao
             </button>
           </form>
         </div>
