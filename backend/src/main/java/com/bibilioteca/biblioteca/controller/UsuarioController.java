@@ -8,11 +8,12 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.bibilioteca.biblioteca.dto.UsuarioRemocaoRequestDto;
 import com.bibilioteca.biblioteca.dto.UsuarioRequestDto;
 import com.bibilioteca.biblioteca.dto.UsuarioResponseDto;
 import com.bibilioteca.biblioteca.service.UsuarioService;
@@ -45,6 +46,12 @@ public class UsuarioController {
     @PutMapping("/{id}")
     public UsuarioResponseDto atualizar(@PathVariable Long id, @RequestBody UsuarioRequestDto request) {
         return usuarioService.atualizar(id, request);
+    }
+
+    @PostMapping("/remocao-lote")
+    public ResponseEntity<Void> removerEmLote(@RequestBody List<UsuarioRemocaoRequestDto> request) {
+        usuarioService.removerEmLote(request);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{id}")

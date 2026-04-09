@@ -1,9 +1,13 @@
 package com.bibilioteca.biblioteca.service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.bibilioteca.biblioteca.dto.LivroRemocaoRequestDto;
 import com.bibilioteca.biblioteca.dto.LivroRequestDto;
 import com.bibilioteca.biblioteca.dto.LivroResponseDto;
 import com.bibilioteca.biblioteca.model.Livro;
@@ -59,14 +63,55 @@ public class LivroService {
         return toResponse(livroRepository.save(livro));
     }
 
-    public void remover(Long id) {
-        Livro livro = obterLivro(id);
-
-        if (emprestimoRepository.existsByLivro_Id(id)) {
-            throw new BusinessException("Nao e possivel excluir livro com emprestimos vinculados.");
+    @Transactional
+    public void remover(Long id, Integer quantidade) {
+        int quantidadeExclusao = quantidade == null ? 1 : quantidade;
+        if (quantidadeExclusao <= 0) {
+            throw new BusinessException("Quantidade para exclusao deve ser maior que zero.");
         }
 
-        livroRepository.delete(livro);
+        Livro livro = obterLivro(id);
+
+        int disponivel = livro.getQuantidadeDisponivel() == null ? 0 : livro.getQuantidadeDisponivel();
+        if (disponivel <= 0) {
+            throw new BusinessException("Nao ha exemplares em estoque para excluir.");
+        }
+        if (quantidadeExclusao > disponivel) {
+            throw new BusinessException("Quantidade para exclusao maior que o estoque disponivel.");
+        }
+
+        livro.setQuantidadeDisponivel(livro.getQuantidadeDisponivel() - quantidadeExclusao);
+        livro.setQuantidadeTotal(livro.getQuantidadeTotal() - quantidadeExclusao);
+
+        if (livro.getQuantidadeTotal() == 0 && !emprestimoRepository.existsByLivro_Id(id)) {
+            livroRepository.delete(livro);
+            return;
+        }
+
+        livroRepository.save(livro);
+    }
+
+    @Transactional
+    public void removerEmLote(List<LivroRemocaoRequestDto> request) {
+        if (request == null || request.isEmpty()) {
+            throw new BusinessException("Informe ao menos um livro para exclusao em lote.");
+        }
+
+        Map<Long, Integer> remocoesPorLivro = new HashMap<>();
+        for (LivroRemocaoRequestDto item : request) {
+            if (item == null || item.getLivroId() == null) {
+                throw new BusinessException("Livro invalido na remocao em lote.");
+            }
+            int quantidade = item.getQuantidade() == null ? 1 : item.getQuantidade();
+            if (quantidade <= 0) {
+                throw new BusinessException("Quantidade para exclusao deve ser maior que zero.");
+            }
+            remocoesPorLivro.merge(item.getLivroId(), quantidade, Integer::sum);
+        }
+
+        for (Map.Entry<Long, Integer> entry : remocoesPorLivro.entrySet()) {
+            remover(entry.getKey(), entry.getValue());
+        }
     }
 
     public Livro obterLivro(Long id) {

@@ -3,7 +3,9 @@ package com.bibilioteca.biblioteca.service;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.bibilioteca.biblioteca.dto.UsuarioRemocaoRequestDto;
 import com.bibilioteca.biblioteca.dto.UsuarioRequestDto;
 import com.bibilioteca.biblioteca.dto.UsuarioResponseDto;
 import com.bibilioteca.biblioteca.model.Usuario;
@@ -60,6 +62,7 @@ public class UsuarioService {
         return toResponse(usuarioRepository.save(usuario));
     }
 
+    @Transactional
     public void remover(Long id) {
         Usuario usuario = obterUsuario(id);
 
@@ -68,6 +71,26 @@ public class UsuarioService {
         }
 
         usuarioRepository.delete(usuario);
+    }
+
+    @Transactional
+    public void removerEmLote(List<UsuarioRemocaoRequestDto> request) {
+        if (request == null || request.isEmpty()) {
+            throw new BusinessException("Informe ao menos um usuario para exclusao em lote.");
+        }
+
+        for (UsuarioRemocaoRequestDto item : request) {
+            if (item == null || item.getUsuarioId() == null) {
+                throw new BusinessException("Usuario invalido na remocao em lote.");
+            }
+            if (emprestimoRepository.existsByUsuario_Id(item.getUsuarioId())) {
+                throw new BusinessException("Nao e possivel excluir usuario com emprestimos vinculados.");
+            }
+        }
+
+        for (UsuarioRemocaoRequestDto item : request) {
+            usuarioRepository.delete(obterUsuario(item.getUsuarioId()));
+        }
     }
 
     public Usuario obterUsuario(Long id) {

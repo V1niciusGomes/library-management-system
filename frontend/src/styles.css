@@ -409,6 +409,18 @@ button:hover {
   min-width: 220px;
 }
 
+.tab-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tab-switch .tab-active {
+  background: color-mix(in srgb, var(--brand) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  color: color-mix(in srgb, var(--brand-dark) 75%, var(--text-main));
+}
+
 .count-chip {
   border: 1px solid var(--line);
   padding: 8px 11px;
@@ -416,6 +428,26 @@ button:hover {
   font-size: 0.8rem;
   font-weight: 700;
   background: color-mix(in srgb, var(--bg-main) 52%, var(--bg-panel));
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.batch-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+}
+
+.batch-check input {
+  width: auto;
 }
 
 .alerta {

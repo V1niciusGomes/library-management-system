@@ -24,6 +24,11 @@ const initialEmprestimo = {
   diasEmprestimo: 7,
 };
 
+const initialEditState = {
+  livroId: null,
+  usuarioId: null,
+};
+
 const sections = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'livros', label: 'Livros' },
@@ -50,14 +55,20 @@ export default function App() {
   const [livroForm, setLivroForm] = useState(initialLivro);
   const [usuarioForm, setUsuarioForm] = useState(initialUsuario);
   const [emprestimoForm, setEmprestimoForm] = useState(initialEmprestimo);
+  const [editState, setEditState] = useState(initialEditState);
   const [mensagem, setMensagem] = useState({ text: '', type: 'ok' });
   const [loading, setLoading] = useState(false);
   const [livroSearch, setLivroSearch] = useState('');
+  const [livroCategoriaFiltro, setLivroCategoriaFiltro] = useState('todas');
   const [usuarioSearch, setUsuarioSearch] = useState('');
   const [emprestimoSearch, setEmprestimoSearch] = useState('');
   const [lastSync, setLastSync] = useState(null);
   const [multaPorDia, setMultaPorDia] = useState(Number(localStorage.getItem('multaPorDia') || '2.5'));
   const [livroSinopseSelecionado, setLivroSinopseSelecionado] = useState(null);
+  const [livrosTab, setLivrosTab] = useState('todos');
+  const [livrosSelecionados, setLivrosSelecionados] = useState([]);
+  const [quantidadeExclusaoPorLivro, setQuantidadeExclusaoPorLivro] = useState({});
+  const [usuariosSelecionados, setUsuariosSelecionados] = useState([]);
 
   async function carregarTudo() {
     if (!authToken) {
@@ -172,15 +183,52 @@ export default function App() {
     return () => clearInterval(interval);
   }, [authToken, autoRefreshSeconds]);
 
+  useEffect(() => {
+    const idsAtuais = new Set(livros.map((livro) => livro.id));
+    setLivrosSelecionados((prev) => prev.filter((id) => idsAtuais.has(id)));
+    setQuantidadeExclusaoPorLivro((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((id) => {
+        if (!idsAtuais.has(Number(id))) {
+          delete next[id];
+        }
+      });
+      return next;
+    });
+  }, [livros]);
+
+  useEffect(() => {
+    const idsAtuais = new Set(usuarios.map((usuario) => usuario.id));
+    setUsuariosSelecionados((prev) => prev.filter((id) => idsAtuais.has(id)));
+  }, [usuarios]);
+
   const livrosFiltrados = useMemo(() => {
     const query = livroSearch.trim().toLowerCase();
-    if (!query) {
-      return livros;
-    }
-    return livros.filter((livro) => (
-      `${livro.titulo} ${livro.autor} ${livro.isbn}`.toLowerCase().includes(query)
-    ));
-  }, [livros, livroSearch]);
+    return livros.filter((livro) => {
+      const textoOk = !query || `${livro.titulo} ${livro.autor} ${livro.isbn}`.toLowerCase().includes(query);
+      const categoria = (livro.categoria || '').trim();
+      const categoriaOk = livroCategoriaFiltro === 'todas' || categoria === livroCategoriaFiltro;
+      return textoOk && categoriaOk;
+    });
+  }, [livros, livroSearch, livroCategoriaFiltro]);
+
+  const categoriasLivros = useMemo(() => {
+    const categorias = livros
+      .map((livro) => (livro.categoria || '').trim())
+      .filter((categoria) => categoria.length > 0);
+
+    return Array.from(new Set(categorias)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [livros]);
+
+  const livrosEmEstoqueFiltrados = useMemo(() => (
+    livrosFiltrados.filter((livro) => (livro.quantidadeDisponivel ?? 0) > 0)
+  ), [livrosFiltrados]);
+
+  const livrosEmprestadosFiltrados = useMemo(() => (
+    livrosFiltrados.filter((livro) => ((livro.quantidadeTotal ?? 0) - (livro.quantidadeDisponivel ?? 0)) > 0)
+  ), [livrosFiltrados]);
+
+  const livrosTodosFiltrados = useMemo(() => livrosFiltrados, [livrosFiltrados]);
 
   const usuariosFiltrados = useMemo(() => {
     const query = usuarioSearch.trim().toLowerCase();
@@ -191,6 +239,9 @@ export default function App() {
       `${usuario.nome} ${usuario.email} ${usuario.documento}`.toLowerCase().includes(query)
     ));
   }, [usuarios, usuarioSearch]);
+
+  const todosUsuariosSelecionados = usuariosFiltrados.length > 0
+    && usuariosFiltrados.every((usuario) => usuariosSelecionados.includes(usuario.id));
 
   const emprestimosFiltrados = useMemo(() => {
     const query = emprestimoSearch.trim().toLowerCase();
@@ -214,23 +265,11 @@ export default function App() {
   }, [emprestimosAtivos]);
 
   const livrosBaixoEstoque = useMemo(() => (
-    livros.filter((livro) => (livro.quantidadeDisponivel ?? 0) <= 1)
+    livros.filter((livro) => {
+      const disponivel = livro.quantidadeDisponivel ?? 0;
+      return disponivel > 0 && disponivel <= 1;
+    })
   ), [livros]);
-
-  const livrosComVinculo = useMemo(() => {
-    const ids = new Set();
-    for (const emprestimo of historicoEmprestimos) {
-      if (emprestimo?.livroId) {
-        ids.add(emprestimo.livroId);
-      }
-    }
-    for (const emprestimo of emprestimosAtivos) {
-      if (emprestimo?.livroId) {
-        ids.add(emprestimo.livroId);
-      }
-    }
-    return ids;
-  }, [historicoEmprestimos, emprestimosAtivos]);
 
   const pendenciasPorUsuario = useMemo(() => {
     const mapa = new Map();
@@ -270,28 +309,44 @@ export default function App() {
   async function criarLivro(event) {
     event.preventDefault();
     try {
-      await api.post('/livros', {
+      const payload = {
         ...livroForm,
         anoPublicacao: livroForm.anoPublicacao ? Number(livroForm.anoPublicacao) : null,
         quantidadeTotal: Number(livroForm.quantidadeTotal),
-      });
+      };
+
+      if (editState.livroId) {
+        await api.put(`/livros/${editState.livroId}`, payload);
+        setMensagem({ text: 'Livro atualizado com sucesso.', type: 'ok' });
+      } else {
+        await api.post('/livros', payload);
+        setMensagem({ text: 'Livro cadastrado com sucesso.', type: 'ok' });
+      }
+
       setLivroForm(initialLivro);
-      setMensagem({ text: 'Livro cadastrado com sucesso.', type: 'ok' });
+      setEditState((prev) => ({ ...prev, livroId: null }));
       await carregarTudo();
     } catch (error) {
-      setMensagem({ text: getApiErrorMessage(error, 'Erro ao cadastrar livro.'), type: 'error' });
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao salvar livro.'), type: 'error' });
     }
   }
 
   async function criarUsuario(event) {
     event.preventDefault();
     try {
-      await api.post('/usuarios', usuarioForm);
+      if (editState.usuarioId) {
+        await api.put(`/usuarios/${editState.usuarioId}`, usuarioForm);
+        setMensagem({ text: 'Usuario atualizado com sucesso.', type: 'ok' });
+      } else {
+        await api.post('/usuarios', usuarioForm);
+        setMensagem({ text: 'Usuario cadastrado com sucesso.', type: 'ok' });
+      }
+
       setUsuarioForm(initialUsuario);
-      setMensagem({ text: 'Usuario cadastrado com sucesso.', type: 'ok' });
+      setEditState((prev) => ({ ...prev, usuarioId: null }));
       await carregarTudo();
     } catch (error) {
-      setMensagem({ text: getApiErrorMessage(error, 'Erro ao cadastrar usuario.'), type: 'error' });
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao salvar usuario.'), type: 'error' });
     }
   }
 
@@ -321,19 +376,108 @@ export default function App() {
     }
   }
 
-  async function deletarLivro(id) {
-    const confirmado = confirmActions ? window.confirm('Deseja realmente excluir este livro?') : true;
+  function getQuantidadeExclusao(livro) {
+    const raw = quantidadeExclusaoPorLivro[livro.id];
+    const parsed = Number(raw ?? 1);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 1;
+    }
+    return Math.min(Math.floor(parsed), livro.quantidadeDisponivel ?? 0);
+  }
+
+  async function deletarLivro(id, quantidade = 1) {
+    const confirmado = confirmActions
+      ? window.confirm(`Deseja realmente excluir ${quantidade} unidade(s) deste livro?`)
+      : true;
     if (!confirmado) {
       return;
     }
 
     try {
-      await api.delete(`/livros/${id}`);
-      setMensagem({ text: 'Livro removido com sucesso.', type: 'ok' });
+      await api.delete(`/livros/${id}`, { params: { quantidade } });
+      setMensagem({ text: `${quantidade} unidade(s) removida(s) com sucesso.`, type: 'ok' });
+      setLivrosSelecionados((prev) => prev.filter((livroId) => livroId !== id));
       await carregarTudo();
     } catch (error) {
       setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover livro.'), type: 'error' });
     }
+  }
+
+  async function deletarLivrosSelecionados() {
+    if (livrosSelecionados.length === 0) {
+      setMensagem({ text: 'Selecione ao menos um livro para excluir.', type: 'error' });
+      return;
+    }
+
+    const payload = livrosSelecionados
+      .map((id) => livros.find((livro) => livro.id === id))
+      .filter(Boolean)
+      .map((livro) => ({
+        livroId: livro.id,
+        quantidade: getQuantidadeExclusao(livro),
+      }))
+      .filter((item) => item.quantidade > 0);
+
+    if (payload.length === 0) {
+      setMensagem({ text: 'Nenhum item valido para exclusao em lote.', type: 'error' });
+      return;
+    }
+
+    const totalUnidades = payload.reduce((acc, item) => acc + item.quantidade, 0);
+    const confirmado = confirmActions
+      ? window.confirm(`Deseja excluir ${totalUnidades} unidade(s) em ${payload.length} livro(s)?`)
+      : true;
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      await api.post('/livros/remocao-lote', payload);
+      setMensagem({ text: `Exclusao em lote concluida: ${totalUnidades} unidade(s).`, type: 'ok' });
+      setLivrosSelecionados([]);
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover livros em lote.'), type: 'error' });
+    }
+  }
+
+  function alterarQuantidadeExclusao(livro, value) {
+    const disponivel = livro.quantidadeDisponivel ?? 0;
+    const parsed = Number(value);
+    const quantidade = Number.isFinite(parsed) ? Math.min(Math.max(Math.floor(parsed), 1), disponivel) : 1;
+    setQuantidadeExclusaoPorLivro((prev) => ({
+      ...prev,
+      [livro.id]: quantidade,
+    }));
+  }
+
+  function alternarSelecaoLivro(id, checked) {
+    setLivrosSelecionados((prev) => {
+      if (checked) {
+        return prev.includes(id) ? prev : [...prev, id];
+      }
+      return prev.filter((item) => item !== id);
+    });
+  }
+
+  function alternarSelecionarTodosEstoque(checked) {
+    const ids = livrosEmEstoqueFiltrados.map((livro) => livro.id);
+    setLivrosSelecionados((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...ids]));
+      }
+      return prev.filter((id) => !ids.includes(id));
+    });
+  }
+
+  function alternarSelecionarTodosUsuarios(checked) {
+    const ids = usuariosFiltrados.map((usuario) => usuario.id);
+    setUsuariosSelecionados((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...ids]));
+      }
+      return prev.filter((id) => !ids.includes(id));
+    });
   }
 
   async function deletarUsuario(id) {
@@ -349,6 +493,62 @@ export default function App() {
     } catch (error) {
       setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover usuario.'), type: 'error' });
     }
+  }
+
+  async function deletarUsuariosSelecionados() {
+    if (usuariosSelecionados.length === 0) {
+      setMensagem({ text: 'Selecione ao menos um usuario para excluir.', type: 'error' });
+      return;
+    }
+
+    const confirmado = confirmActions
+      ? window.confirm(`Deseja realmente excluir ${usuariosSelecionados.length} usuario(s) selecionado(s)?`)
+      : true;
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      await api.post('/usuarios/remocao-lote', usuariosSelecionados.map((usuarioId) => ({ usuarioId })));
+      setUsuariosSelecionados([]);
+      setMensagem({ text: 'Usuarios removidos com sucesso.', type: 'ok' });
+      await carregarTudo();
+    } catch (error) {
+      setMensagem({ text: getApiErrorMessage(error, 'Erro ao remover usuarios.'), type: 'error' });
+    }
+  }
+
+  function iniciarEdicaoLivro(livro) {
+    setLivroForm({
+      titulo: livro.titulo || '',
+      autor: livro.autor || '',
+      isbn: livro.isbn || '',
+      categoria: livro.categoria || '',
+      sinopse: livro.sinopse || '',
+      anoPublicacao: livro.anoPublicacao || '',
+      quantidadeTotal: livro.quantidadeTotal || 1,
+    });
+    setEditState((prev) => ({ ...prev, livroId: livro.id }));
+  }
+
+  function cancelarEdicaoLivro() {
+    setLivroForm(initialLivro);
+    setEditState((prev) => ({ ...prev, livroId: null }));
+  }
+
+  function iniciarEdicaoUsuario(usuario) {
+    setUsuarioForm({
+      nome: usuario.nome || '',
+      email: usuario.email || '',
+      documento: usuario.documento || '',
+      telefone: usuario.telefone || '',
+    });
+    setEditState((prev) => ({ ...prev, usuarioId: usuario.id }));
+  }
+
+  function cancelarEdicaoUsuario() {
+    setUsuarioForm(initialUsuario);
+    setEditState((prev) => ({ ...prev, usuarioId: null }));
   }
 
   async function login(event) {
@@ -378,6 +578,9 @@ export default function App() {
     localStorage.removeItem('adminUser');
     setAuthToken('');
     setAdminUser('');
+    setEditState(initialEditState);
+    setLivrosSelecionados([]);
+    setUsuariosSelecionados([]);
     setStats(null);
     setLivros([]);
     setUsuarios([]);
@@ -397,6 +600,9 @@ export default function App() {
     setAutoRefreshSeconds(0);
     setAuthToken('');
     setAdminUser('');
+    setEditState(initialEditState);
+    setLivrosSelecionados([]);
+    setUsuariosSelecionados([]);
     setLoginForm({ username: 'admin', password: 'admin123' });
     setMensagem({ text: 'Sessao limpa com sucesso.', type: 'ok' });
   }
@@ -552,7 +758,12 @@ export default function App() {
                 <textarea placeholder="Sinopse" value={livroForm.sinopse} onChange={(e) => atualizarCampo(setLivroForm, 'sinopse', e.target.value)} rows={3} />
                 <input type="number" placeholder="Ano" value={livroForm.anoPublicacao} onChange={(e) => atualizarCampo(setLivroForm, 'anoPublicacao', e.target.value)} />
                 <input type="number" min="1" placeholder="Quantidade" value={livroForm.quantidadeTotal} onChange={(e) => atualizarCampo(setLivroForm, 'quantidadeTotal', e.target.value)} required />
-                <button type="submit">Salvar Livro</button>
+                <button type="submit">{editState.livroId ? 'Salvar Alterações' : 'Salvar Livro'}</button>
+                {editState.livroId && (
+                  <button type="button" className="secondary-btn" onClick={cancelarEdicaoLivro}>
+                    Cancelar edição
+                  </button>
+                )}
               </form>
             </section>
 
@@ -564,31 +775,157 @@ export default function App() {
                   onChange={(e) => setLivroSearch(e.target.value)}
                   placeholder="Buscar por titulo, autor ou ISBN"
                 />
-                <span className="count-chip">{livrosFiltrados.length} resultados</span>
+                <select
+                  value={livroCategoriaFiltro}
+                  onChange={(e) => setLivroCategoriaFiltro(e.target.value)}
+                  aria-label="Filtrar livros por genero"
+                >
+                  <option value="todas">Todos os generos</option>
+                  {categoriasLivros.map((categoria) => (
+                    <option key={categoria} value={categoria}>{categoria}</option>
+                  ))}
+                </select>
+                <span className="count-chip">
+                  {livrosTab === 'todos'
+                    ? livrosTodosFiltrados.length
+                    : livrosTab === 'estoque'
+                      ? livrosEmEstoqueFiltrados.length
+                      : livrosEmprestadosFiltrados.length} resultados
+                </span>
               </div>
-              <DataTable
-                columns={['Titulo', 'Autor', 'ISBN', 'Disponivel', 'Total', 'Acoes']}
-                rows={livrosFiltrados.map((livro) => [
-                  livro.titulo,
-                  livro.autor,
-                  livro.isbn,
-                  <span className={`badge ${livro.quantidadeDisponivel > 0 ? 'badge-ok' : 'badge-warn'}`} key={`disp-${livro.id}`}>
-                    {livro.quantidadeDisponivel}
-                  </span>,
-                  String(livro.quantidadeTotal),
-                  <div className="row-actions" key={`acoes-livro-${livro.id}`}>
-                    <button type="button" onClick={() => setLivroSinopseSelecionado(livro)}>Sinopse</button>
-                    {!livrosComVinculo.has(livro.id) ? (
-                      <button className="danger-btn" type="button" onClick={() => deletarLivro(livro.id)}>
-                        Excluir
+              <div className="tab-switch" role="tablist" aria-label="Separar livros por status">
+                <button
+                  type="button"
+                  className={`secondary-btn ${livrosTab === 'todos' ? 'tab-active' : ''}`}
+                  onClick={() => setLivrosTab('todos')}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  className={`secondary-btn ${livrosTab === 'estoque' ? 'tab-active' : ''}`}
+                  onClick={() => setLivrosTab('estoque')}
+                >
+                  Em Estoque
+                </button>
+                <button
+                  type="button"
+                  className={`secondary-btn ${livrosTab === 'emprestados' ? 'tab-active' : ''}`}
+                  onClick={() => setLivrosTab('emprestados')}
+                >
+                  Emprestados
+                </button>
+              </div>
+
+              {livrosTab === 'todos' ? (
+                <DataTable
+                  columns={['Titulo', 'Autor', 'ISBN', 'Disponivel', 'Total', 'Qtd excluir', 'Acoes']}
+                  rows={livrosTodosFiltrados.map((livro) => [
+                    livro.titulo,
+                    livro.autor,
+                    livro.isbn,
+                    <span className={`badge ${livro.quantidadeDisponivel > 0 ? 'badge-ok' : 'badge-warn'}`} key={`disp-all-${livro.id}`}>
+                      {livro.quantidadeDisponivel}
+                    </span>,
+                    String(livro.quantidadeTotal),
+                    (livro.quantidadeDisponivel ?? 0) > 0 ? (
+                      <input
+                        type="number"
+                        min="1"
+                        max={livro.quantidadeDisponivel}
+                        value={quantidadeExclusaoPorLivro[livro.id] ?? 1}
+                        onChange={(e) => alterarQuantidadeExclusao(livro, e.target.value)}
+                      />
+                    ) : '-',
+                    <div className="row-actions" key={`acoes-all-livro-${livro.id}`}>
+                      <button type="button" onClick={() => setLivroSinopseSelecionado(livro)}>Sinopse</button>
+                      <button type="button" onClick={() => iniciarEdicaoLivro(livro)}>Editar</button>
+                      {(livro.quantidadeDisponivel ?? 0) > 0 ? (
+                        <button
+                          className="danger-btn"
+                          type="button"
+                          onClick={() => deletarLivro(livro.id, getQuantidadeExclusao(livro))}
+                        >
+                          Excluir unidades
+                        </button>
+                      ) : (
+                        <span className="badge badge-info">Sem estoque</span>
+                      )}
+                    </div>,
+                  ])}
+                  emptyMessage="Nenhum livro cadastrado."
+                />
+              ) : livrosTab === 'estoque' ? (
+                <>
+                  <div className="batch-actions">
+                    <label className="batch-check">
+                      <input
+                        type="checkbox"
+                        checked={livrosEmEstoqueFiltrados.length > 0 && livrosEmEstoqueFiltrados.every((livro) => livrosSelecionados.includes(livro.id))}
+                        onChange={(e) => alternarSelecionarTodosEstoque(e.target.checked)}
+                      />
+                      Selecionar todos visiveis
+                    </label>
+                    <button type="button" className="secondary-btn" onClick={() => setLivrosSelecionados([])}>
+                      Limpar selecao
+                    </button>
+                    <button type="button" className="danger-btn" onClick={deletarLivrosSelecionados}>
+                      Excluir selecionados
+                    </button>
+                  </div>
+                <DataTable
+                  columns={['Sel', 'Titulo', 'Autor', 'ISBN', 'Disponivel', 'Total', 'Qtd excluir', 'Acoes']}
+                  rows={livrosEmEstoqueFiltrados.map((livro) => [
+                    <input
+                      type="checkbox"
+                      key={`sel-${livro.id}`}
+                      checked={livrosSelecionados.includes(livro.id)}
+                      onChange={(e) => alternarSelecaoLivro(livro.id, e.target.checked)}
+                    />,
+                    livro.titulo,
+                    livro.autor,
+                    livro.isbn,
+                    <span className="badge badge-ok" key={`disp-${livro.id}`}>
+                      {livro.quantidadeDisponivel}
+                    </span>,
+                    String(livro.quantidadeTotal),
+                    <input
+                      type="number"
+                      min="1"
+                      max={livro.quantidadeDisponivel}
+                      value={quantidadeExclusaoPorLivro[livro.id] ?? 1}
+                      onChange={(e) => alterarQuantidadeExclusao(livro, e.target.value)}
+                    />,
+                    <div className="row-actions" key={`acoes-livro-${livro.id}`}>
+                      <button type="button" onClick={() => setLivroSinopseSelecionado(livro)}>Sinopse</button>
+                      <button type="button" onClick={() => iniciarEdicaoLivro(livro)}>Editar</button>
+                      <button
+                        className="danger-btn"
+                        type="button"
+                        onClick={() => deletarLivro(livro.id, getQuantidadeExclusao(livro))}
+                      >
+                        Excluir unidades
                       </button>
-                    ) : (
-                      <span className="badge badge-info">Vinculado a cliente</span>
-                    )}
-                  </div>,
-                ])}
-                emptyMessage="Nenhum livro cadastrado."
-              />
+                    </div>,
+                  ])}
+                  emptyMessage="Nenhum livro em estoque."
+                />
+                </>
+              ) : (
+                <DataTable
+                  columns={['Titulo', 'Autor', 'ISBN', 'Emprestados', 'Disponivel']}
+                  rows={livrosEmprestadosFiltrados.map((livro) => [
+                    livro.titulo,
+                    livro.autor,
+                    livro.isbn,
+                    <span className="badge badge-warn" key={`emp-${livro.id}`}>
+                      {(livro.quantidadeTotal ?? 0) - (livro.quantidadeDisponivel ?? 0)}
+                    </span>,
+                    String(livro.quantidadeDisponivel ?? 0),
+                  ])}
+                  emptyMessage="Nenhum livro emprestado no momento."
+                />
+              )}
             </section>
 
             <section className="panel">
@@ -647,16 +984,49 @@ export default function App() {
                 />
                 <span className="count-chip">{usuariosFiltrados.length} resultados</span>
               </div>
+              <div className="batch-actions">
+                <label className="batch-check">
+                  <input
+                    type="checkbox"
+                    checked={todosUsuariosSelecionados}
+                    onChange={(e) => alternarSelecionarTodosUsuarios(e.target.checked)}
+                  />
+                  Selecionar todos visiveis
+                </label>
+                <button type="button" className="secondary-btn" onClick={() => setUsuariosSelecionados([])}>
+                  Limpar selecao
+                </button>
+                <button type="button" className="danger-btn" onClick={deletarUsuariosSelecionados}>
+                  Excluir selecionados
+                </button>
+              </div>
               <DataTable
-                columns={['Nome', 'Email', 'Documento', 'Cadastro', 'Acoes']}
+                columns={['Sel', 'Nome', 'Email', 'Documento', 'Cadastro', 'Acoes']}
                 rows={usuariosFiltrados.map((usuario) => [
+                  <input
+                    type="checkbox"
+                    key={`sel-usuario-${usuario.id}`}
+                    checked={usuariosSelecionados.includes(usuario.id)}
+                    onChange={(e) => {
+                      setUsuariosSelecionados((prev) => (
+                        e.target.checked
+                          ? (prev.includes(usuario.id) ? prev : [...prev, usuario.id])
+                          : prev.filter((id) => id !== usuario.id)
+                      ));
+                    }}
+                  />,
                   usuario.nome,
                   usuario.email,
                   usuario.documento,
                   formatDate(usuario.dataCadastro),
-                  <button className="danger-btn" key={`delete-usuario-${usuario.id}`} onClick={() => deletarUsuario(usuario.id)}>
-                    Excluir
-                  </button>,
+                  <div className="row-actions" key={`actions-usuario-${usuario.id}`}>
+                    <button type="button" onClick={() => iniciarEdicaoUsuario(usuario)}>
+                      Editar
+                    </button>
+                    <button className="danger-btn" type="button" onClick={() => deletarUsuario(usuario.id)}>
+                      Excluir
+                    </button>
+                  </div>,
                 ])}
                 emptyMessage="Nenhum usuario cadastrado."
               />
