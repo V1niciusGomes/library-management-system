@@ -1,3 +1,4 @@
+## Imagem do frontend: instala dependencias e sobe o Vite em modo de desenvolvimento.
 FROM node:20-alpine
 WORKDIR /app
 

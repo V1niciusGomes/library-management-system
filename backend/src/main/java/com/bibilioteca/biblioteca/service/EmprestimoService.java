@@ -1,3 +1,6 @@
+/**
+ * Coordena as regras de emprestimo, devolucao, consultas e validacoes associadas.
+ */
 package com.bibilioteca.biblioteca.service;
 
 import java.time.LocalDate;

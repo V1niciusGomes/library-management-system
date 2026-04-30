@@ -1,3 +1,4 @@
+// Componente principal da interface; orquestra login, consultas, cadastros e telas do painel.
 import { useEffect, useMemo, useState } from 'react';
 import api, { authApi } from './api';
 

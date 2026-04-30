@@ -1,3 +1,6 @@
+/**
+ * Define a seguranca da API, liberando o login e protegendo o restante com autenticacao basica.
+ */
 package com.bibilioteca.biblioteca.config;
 
 import org.springframework.beans.factory.annotation.Value;

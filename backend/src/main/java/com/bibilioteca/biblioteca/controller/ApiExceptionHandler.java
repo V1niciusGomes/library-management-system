@@ -1,3 +1,6 @@
+/**
+ * Centraliza o tratamento de excecoes da API e converte erros em respostas padronizadas.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import java.time.Instant;

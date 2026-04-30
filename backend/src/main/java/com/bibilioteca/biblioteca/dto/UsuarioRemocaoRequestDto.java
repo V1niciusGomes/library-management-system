@@ -1,3 +1,6 @@
+/**
+ * Modelo usado para remover usuarios em lote a partir de seus identificadores.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class UsuarioRemocaoRequestDto {

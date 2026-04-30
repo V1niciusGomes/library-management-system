@@ -1,3 +1,6 @@
+/**
+ * Entidade que registra cada emprestimo, sua vigencia e o status de devolucao.
+ */
 package com.bibilioteca.biblioteca.model;
 
 import java.time.LocalDate;

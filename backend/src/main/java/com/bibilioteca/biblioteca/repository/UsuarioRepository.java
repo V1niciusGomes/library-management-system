@@ -1,3 +1,6 @@
+/**
+ * Acesso ao banco para consultar e salvar usuarios cadastrados.
+ */
 package com.bibilioteca.biblioteca.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;

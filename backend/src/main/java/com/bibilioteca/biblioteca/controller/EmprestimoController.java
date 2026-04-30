@@ -1,3 +1,6 @@
+/**
+ * Controla o ciclo de emprestimos, consultas de ativos, historico e registro de devolucao.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import java.util.List;

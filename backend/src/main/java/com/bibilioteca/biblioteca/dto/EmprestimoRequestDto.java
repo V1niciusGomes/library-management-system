@@ -1,3 +1,6 @@
+/**
+ * Dados necessarios para registrar um novo emprestimo de livro.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class EmprestimoRequestDto {

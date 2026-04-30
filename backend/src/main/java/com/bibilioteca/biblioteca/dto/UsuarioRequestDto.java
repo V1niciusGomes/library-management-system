@@ -1,3 +1,6 @@
+/**
+ * Dados recebidos para cadastrar ou atualizar um usuario da biblioteca.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class UsuarioRequestDto {

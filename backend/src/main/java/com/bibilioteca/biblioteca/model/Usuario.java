@@ -1,3 +1,6 @@
+/**
+ * Entidade que guarda os dados cadastrais dos usuarios da biblioteca.
+ */
 package com.bibilioteca.biblioteca.model;
 
 import java.time.LocalDateTime;

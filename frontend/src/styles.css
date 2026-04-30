@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
+/* Estilos globais da interface, com tema, layout, componentes e responsividade. */
 :root {
   --bg-main: #f4f7fb;
   --bg-panel: #ffffff;

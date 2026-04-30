@@ -1,3 +1,6 @@
+/**
+ * Expõe o endpoint de login do admin e devolve o token usado nas chamadas protegidas.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import java.nio.charset.StandardCharsets;

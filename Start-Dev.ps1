@@ -1,3 +1,4 @@
+## Script de apoio que prepara Java e inicia backend e frontend em janelas separadas.
 param(
     [string]$BackendProfile = "local",
     [switch]$InstallFrontendDeps

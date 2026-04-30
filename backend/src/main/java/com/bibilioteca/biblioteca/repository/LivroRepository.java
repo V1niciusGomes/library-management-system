@@ -1,3 +1,6 @@
+/**
+ * Acesso ao banco para operacoes de leitura e persistencia de livros.
+ */
 package com.bibilioteca.biblioteca.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;

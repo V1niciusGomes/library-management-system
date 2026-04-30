@@ -1,3 +1,6 @@
+/**
+ * Gerencia os endpoints de usuarios, permitindo criar, listar, editar e remover cadastros.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import java.util.List;

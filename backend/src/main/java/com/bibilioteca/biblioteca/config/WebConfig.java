@@ -1,3 +1,6 @@
+/**
+ * Configura CORS para permitir que o frontend acesse a API durante o desenvolvimento.
+ */
 package com.bibilioteca.biblioteca.config;
 
 import org.springframework.context.annotation.Configuration;

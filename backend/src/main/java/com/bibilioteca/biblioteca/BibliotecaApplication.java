@@ -1,3 +1,6 @@
+/**
+ * Ponto de entrada da aplicacao Spring Boot; sobe o contexto e inicializa a API da biblioteca.
+ */
 package com.bibilioteca.biblioteca;
 
 import org.springframework.boot.SpringApplication;

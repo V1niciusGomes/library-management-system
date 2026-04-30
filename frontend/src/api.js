@@ -1,3 +1,4 @@
+// Centraliza as instancias Axios e normaliza o token salvo no navegador.
 import axios from 'axios';
 
 function normalizeAuthToken(token) {

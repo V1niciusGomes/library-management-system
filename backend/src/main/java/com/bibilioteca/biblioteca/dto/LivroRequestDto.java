@@ -1,3 +1,6 @@
+/**
+ * Contem os dados usados para criar ou atualizar um livro no acervo.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class LivroRequestDto {

@@ -1,3 +1,6 @@
+/**
+ * Executa as regras de negocio para manter os usuarios consistentes no sistema.
+ */
 package com.bibilioteca.biblioteca.service;
 
 import java.util.List;

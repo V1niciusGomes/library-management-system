@@ -1,3 +1,6 @@
+/**
+ * Representa as credenciais enviadas pelo frontend para autenticar o administrador.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class AuthLoginRequestDto {

@@ -1,3 +1,6 @@
+/**
+ * Carrega dados de exemplo quando o perfil local esta ativo, facilitando testes e demonstracoes.
+ */
 package com.bibilioteca.biblioteca.config;
 
 import java.time.LocalDate;

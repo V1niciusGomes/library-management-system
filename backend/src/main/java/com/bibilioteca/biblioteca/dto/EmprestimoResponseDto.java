@@ -1,3 +1,6 @@
+/**
+ * Retorna os dados consolidados de um emprestimo para a tela e para o historico.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 import java.time.LocalDate;

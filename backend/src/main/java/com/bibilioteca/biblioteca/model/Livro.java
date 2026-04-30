@@ -1,3 +1,6 @@
+/**
+ * Entidade que representa um livro cadastrado e controla as quantidades em estoque.
+ */
 package com.bibilioteca.biblioteca.model;
 
 import jakarta.persistence.Column;

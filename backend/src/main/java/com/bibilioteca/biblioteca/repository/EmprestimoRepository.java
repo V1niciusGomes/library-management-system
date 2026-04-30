@@ -1,3 +1,6 @@
+/**
+ * Acesso a dados de emprestimos para consultas de ativos, historico e indicadores.
+ */
 package com.bibilioteca.biblioteca.repository;
 
 import java.util.List;

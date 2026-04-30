@@ -1,3 +1,6 @@
+/**
+ * Transporta o token de acesso e o nome do usuario apos um login bem-sucedido.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class AuthLoginResponseDto {

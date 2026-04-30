@@ -1,3 +1,6 @@
+/**
+ * Representa a solicitacao de remocao parcial ou total de unidades de um livro.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class LivroRemocaoRequestDto {

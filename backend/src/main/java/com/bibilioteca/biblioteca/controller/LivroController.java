@@ -1,3 +1,6 @@
+/**
+ * Expõe operacoes de cadastro, consulta, atualizacao e remocao de livros do acervo.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import java.util.List;

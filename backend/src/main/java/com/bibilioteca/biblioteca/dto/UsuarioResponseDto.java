@@ -1,3 +1,6 @@
+/**
+ * Retorna os dados de usuario já prontos para exibicao na interface.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 import java.time.LocalDateTime;

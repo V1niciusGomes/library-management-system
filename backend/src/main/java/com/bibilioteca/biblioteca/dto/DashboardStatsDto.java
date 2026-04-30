@@ -1,3 +1,6 @@
+/**
+ * Agrupa os indicadores exibidos no painel principal da biblioteca.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class DashboardStatsDto {

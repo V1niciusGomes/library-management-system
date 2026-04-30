@@ -1,3 +1,6 @@
+/**
+ * Aplica as regras de negocio para cadastro, alteracao e remocao de livros.
+ */
 package com.bibilioteca.biblioteca.service;
 
 import java.util.HashMap;

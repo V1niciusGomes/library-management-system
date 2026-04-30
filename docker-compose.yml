@@ -1,3 +1,4 @@
+## Orquestra banco, backend e frontend para subir o ambiente completo com um comando.
 version: '3.9'
 
 services:

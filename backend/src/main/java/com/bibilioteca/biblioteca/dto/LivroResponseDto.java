@@ -1,3 +1,6 @@
+/**
+ * Expõe os dados do livro com quantidades e metadados para a interface.
+ */
 package com.bibilioteca.biblioteca.dto;
 
 public class LivroResponseDto {

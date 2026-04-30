@@ -1,3 +1,6 @@
+/**
+ * Monta os indicadores resumidos que alimentam o painel administrativo.
+ */
 package com.bibilioteca.biblioteca.service;
 
 import org.springframework.stereotype.Service;

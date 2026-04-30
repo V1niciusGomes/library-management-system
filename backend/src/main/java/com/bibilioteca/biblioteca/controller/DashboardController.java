@@ -1,3 +1,6 @@
+/**
+ * Disponibiliza os dados consolidados do painel, como contagens e indicadores principais.
+ */
 package com.bibilioteca.biblioteca.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
