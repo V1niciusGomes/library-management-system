@@ -22,6 +22,36 @@ if (Test-Path $vscodeJava) {
     $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 }
 
+# If a system JDK (with javac) is available, prefer it over the embedded JRE
+$javacCmd = Get-Command javac -ErrorAction SilentlyContinue
+if ($javacCmd) {
+    $javacPath = $javacCmd.Path
+    $jdkBin = Split-Path -Parent $javacPath
+    $jdkHome = Split-Path -Parent $jdkBin
+    if (Test-Path $jdkHome) {
+        $vscodeJava = $jdkHome
+        $env:JAVA_HOME = $vscodeJava
+        $env:Path = "$env:JAVA_HOME\bin;$env:Path"
+    }
+}
+
+# Prefer common Program Files Java installations (explicit list)
+$commonJdks = @(
+    'C:\Program Files\Java\jdk-23',
+    'C:\Program Files\Java\jdk-21',
+    'C:\Program Files\Java\jdk-17',
+    'C:\Program Files\OpenJDK\jdk-21',
+    'C:\Program Files\OpenJDK\jdk-17'
+)
+foreach ($p in $commonJdks) {
+    if (Test-Path $p) {
+        $vscodeJava = $p
+        $env:JAVA_HOME = $vscodeJava
+        $env:Path = "$env:JAVA_HOME\bin;$env:Path"
+        break
+    }
+}
+
 if ($InstallFrontendDeps) {
     Write-Host "Installing frontend dependencies..." -ForegroundColor Yellow
     Push-Location $frontendPath
@@ -29,11 +59,12 @@ if ($InstallFrontendDeps) {
     Pop-Location
 }
 
-$backendCommand = "Set-Location '$projectRoot'; `$env:SPRING_PROFILES_ACTIVE='$BackendProfile'; .\mvnw.cmd spring-boot:run"
+$backendCommand = "Set-Location '$projectRoot'; `$env:JAVA_HOME='$vscodeJava'; `$env:Path=`"$vscodeJava\bin;`$env:Path`"; `$env:SPRING_PROFILES_ACTIVE='$BackendProfile'; .\mvnw.cmd spring-boot:run"
 $frontendCommand = "Set-Location '$frontendPath'; npm run dev"
 
-Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCommand -WindowStyle Normal
-Start-Process powershell -ArgumentList "-NoExit", "-Command", $frontendCommand -WindowStyle Normal
+$psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+Start-Process -FilePath $psExe -ArgumentList "-NoExit", "-Command", $backendCommand -WindowStyle Normal
+Start-Process -FilePath $psExe -ArgumentList "-NoExit", "-Command", $frontendCommand -WindowStyle Normal
 
 Write-Host "Services starting..." -ForegroundColor Green
 Write-Host "Backend: http://localhost:8080" -ForegroundColor Green
